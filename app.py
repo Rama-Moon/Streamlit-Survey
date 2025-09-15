@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import gspread
 
 # --- 페이지 설정 ---
 st.set_page_config(
@@ -68,30 +69,38 @@ st.divider()
 submit_button = st.button("설문 완료 및 제출하기")
 
 if submit_button:
-    # 모든 질문에 답변했는지 확인 (st.radio는 항상 값이 있으므로 별도 확인은 생략 가능)
-    
-    # 데이터를 딕셔너리 형태로 정리
-    new_data = {
-        "알게된 경로": q1_response,
-        "선호 로고": q2_response,
-        "원하는 기능": q3_response,
-        "전반적 만족도": q4_response,
-    }
-
-    # CSV 파일 경로 설정
-    csv_path = Path(__file__).parent / "survey_data.csv"
-
-    # 기존 파일이 있으면 데이터를 추가, 없으면 새로 생성
     try:
-        df = pd.read_csv(csv_path)
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        # --- Google Sheets Connection ---
+        # Streamlit의 Secrets를 사용하여 서비스 계정 인증 정보 로드
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
 
-    except FileNotFoundError:
-        df = pd.DataFrame([new_data])
+        # "Survey-Results"라는 이름의 스프레드시트 열기
+        spreadsheet = gc.open("Survey-Results")
 
-    # CSV 파일로 저장
-    df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+        # 첫 번째 워크시트 선택
+        worksheet = spreadsheet.sheet1
+        # --- End of Connection ---
 
-    # 성공 메시지 및 효과
-    st.success("소중한 의견 감사합니다! 성공적으로 제출되었습니다.")
-    st.balloons()
+        # 데이터를 딕셔너리 형태로 정리
+        new_data = {
+            "알게된 경로": q1_response,
+            "선호 로고": q2_response,
+            "원하는 기능": q3_response,
+            "전반적 만족도": q4_response,
+        }
+
+        # --- Data Appending ---
+        # 시트의 첫 행이 비어있을 경우, 헤더(질문) 추가
+        if worksheet.cell(1, 1).value is None:
+            worksheet.append_row(list(new_data.keys()))
+
+        # 새로운 설문 데이터를 다음 행에 추가
+        worksheet.append_row(list(new_data.values()))
+        # --- End of Appending ---
+
+        st.success("✅ 설문이 구글 시트에 성공적으로 저장되었습니다!")
+        st.balloons()
+
+    except Exception as e:
+        st.error("오류가 발생했습니다. 구글 시트 연동 설정을 다시 확인해주세요.")
+        st.error(f"에러 상세 정보: {e}")
